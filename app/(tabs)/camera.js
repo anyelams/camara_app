@@ -1,64 +1,70 @@
+import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImageManipulator from "expo-image-manipulator";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Button,
   StyleSheet,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
+
 export default function CameraScreen() {
   // === ESTADOS Y REFS ===
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState("back");
-  // La detección en vivo arranca automáticamente al entrar (true por defecto).
+  const [torchEnabled, setTorchEnabled] = useState(false);
+  const [autoFocusPoint, setAutoFocusPoint] = useState({ x: 0.5, y: 0.5 });
   const [liveDetections, setLiveDetections] = useState([]);
   const [photoDetections, setPhotoDetections] = useState([]);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
   const [imageLayout, setImageLayout] = useState({ width: 640, height: 480 });
-  const [preciseMode, setPreciseMode] = useState(true);
-  const [isLiveDetecting, setIsLiveDetecting] = useState(true); // activo de inicio
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
+
   const cameraRef = useRef(null);
   const liveIntervalRef = useRef(null);
+
   const BBOX_SCALE_FACTOR = 1.4;
   const BBOX_PADDING = 10;
   const DEBUG_OFFSET = { x: 0, y: 0 };
-  // === FUNCIONES DE CONTROL ===
-  // Voltear cámara y limpiar detecciones
+
+  // Cambia cámara y reinicia
   const flipCamera = () => {
     setFacing((prev) => (prev === "back" ? "front" : "back"));
+    setTorchEnabled(false);
+    setAutoFocusPoint({ x: 0.5, y: 0.5 });
     setLiveDetections([]);
     setPhotoDetections([]);
   };
-  // Alternar detección en vivo (opcional: el usuario aún puede pausar)
-  const toggleLiveDetecting = () => {
-    if (isLiveDetecting) {
-      setIsLiveDetecting(false);
-      setLiveDetections([]);
-    } else {
-      setIsLiveDetecting(true);
-      setLiveDetections([]);
+
+  // Toca para enfocar y limpia foto previa
+  const handleFocus = (e) => {
+    const { locationX, locationY } = e.nativeEvent;
+    if (cameraLayout.width && cameraLayout.height) {
+      setAutoFocusPoint({
+        x: locationX / cameraLayout.width,
+        y: locationY / cameraLayout.height,
+      });
+      setPhotoDetections([]); // limpio el recuadro de la última foto
     }
   };
+
   // === DETECCIÓN EN VIVO CON IA ===
-  // Toma un mini-frame y lo envía a la IA cada segundo
   const processLiveFrame = async () => {
     if (!cameraRef.current || !isCameraReady) return;
+    setPhotoDetections([]); // limpio recuadros de foto anterior
     try {
-      // 1) Foto ligera sin destello ni sonido
-      const photo = await cameraRef.current.takePictureAsync({
+      const snap = await cameraRef.current.takePictureAsync({
         quality: 0,
         base64: false,
         skipProcessing: true,
         shutterSound: false,
       });
-      // 2) Redimensionar a ancho = 640 px
       const resized = await ImageManipulator.manipulateAsync(
-        photo.uri,
+        snap.uri,
         [{ resize: { width: 640 } }],
         {
           compress: 0.8,
@@ -67,42 +73,29 @@ export default function CameraScreen() {
         }
       );
       setImageLayout({ width: resized.width, height: resized.height });
-      // 3) Enviar a backend IA si hay base64
       if (resized.base64) {
-        const response = await fetch(
-          "http://3.145.153.44/api/detect-code-boxes/",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image_base64: resized.base64 }),
-          }
-        );
-        if (response.ok) {
-          const json = await response.json();
-          setLiveDetections(json.result || []);
+        const res = await fetch("http://3.145.153.44/api/detect-code-boxes/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: resized.base64 }),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          setLiveDetections(j.result || []);
         } else {
           setLiveDetections([]);
         }
-      } else {
-        setLiveDetections([]);
       }
-    } catch (error) {
-      console.log("Error en detección en vivo:", error);
+    } catch (err) {
+      console.log("Error live detect:", err);
       setLiveDetections([]);
     }
   };
-  // useEffect para arrancar/detener el bucle de detección en vivo
+
   useEffect(() => {
-    if (isLiveDetecting && isCameraReady) {
-      // Ejecutar inmediatamente una detección
+    if (isCameraReady) {
       processLiveFrame();
-      // Luego repetir cada 1 segundo
-      liveIntervalRef.current = setInterval(() => {
-        processLiveFrame();
-      }, 1000);
-    } else if (liveIntervalRef.current) {
-      clearInterval(liveIntervalRef.current);
-      liveIntervalRef.current = null;
+      liveIntervalRef.current = setInterval(processLiveFrame, 1000);
     }
     return () => {
       if (liveIntervalRef.current) {
@@ -110,24 +103,22 @@ export default function CameraScreen() {
         liveIntervalRef.current = null;
       }
     };
-  }, [isLiveDetecting, isCameraReady]);
+  }, [isCameraReady]);
+
   // === TOMA DE FOTO FINAL CON IA ===
-  // Toma foto en alta calidad y envía al backend IA
   const takePhotoAndScan = async () => {
     if (!cameraRef.current || !isCameraReady || isTakingPhoto) return;
     setIsTakingPhoto(true);
-    setPhotoDetections([]);
+    setPhotoDetections([]); // limpio antes de procesar
     try {
-      // 1) Foto en alta calidad sin destello ni sonido
-      const photo = await cameraRef.current.takePictureAsync({
+      const snap = await cameraRef.current.takePictureAsync({
         quality: 1,
         base64: false,
         skipProcessing: false,
         shutterSound: false,
       });
-      // 2) Redimensionar a ancho = 640 px
       const resized = await ImageManipulator.manipulateAsync(
-        photo.uri,
+        snap.uri,
         [{ resize: { width: 640 } }],
         {
           compress: 0.8,
@@ -136,227 +127,194 @@ export default function CameraScreen() {
         }
       );
       setImageLayout({ width: resized.width, height: resized.height });
-      // 3) Enviar a IA si hay base64
       if (resized.base64) {
-        const response = await fetch(
-          "http://3.145.153.44/api/read-code-base64/",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image_base64: resized.base64 }),
-          }
-        );
-        if (response.ok) {
-          const json = await response.json();
-          setPhotoDetections(json.result || []);
+        const res = await fetch("http://3.145.153.44/api/read-code-base64/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: resized.base64 }),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          setPhotoDetections(j.result || []);
         } else {
           setPhotoDetections([]);
         }
-      } else {
-        setPhotoDetections([]);
       }
-    } catch (error) {
-      console.log("Error al tomar foto o procesar IA:", error);
+    } catch (err) {
+      console.log("Error take photo:", err);
       setPhotoDetections([]);
     } finally {
       setIsTakingPhoto(false);
     }
   };
-  // === CONVERTIR COORDENADAS 640×480 → PREVIEW EN PANTALLA ===
+
+  // === CONVERTIR Y RENDERIZAR BOUNDING BOXES ===
   const convertBoundingBox = (bbox) => {
-    // 1) Padding
     const padded = {
       x1: bbox.x1 - BBOX_PADDING,
       y1: bbox.y1 - BBOX_PADDING,
       x2: bbox.x2 + BBOX_PADDING,
       y2: bbox.y2 + BBOX_PADDING,
     };
-    // 2) Centro y dimensiones
-    const centerX = (padded.x1 + padded.x2) / 2;
-    const centerY = (padded.y1 + padded.y2) / 2;
+    const cx = (padded.x1 + padded.x2) / 2;
+    const cy = (padded.y1 + padded.y2) / 2;
     const w = Math.abs(padded.x2 - padded.x1);
     const h = Math.abs(padded.y2 - padded.y1);
-    // 3) Escalado (preciso/expandido)
-    const scale = preciseMode ? 1 : BBOX_SCALE_FACTOR;
-    const scaledW = w * scale;
-    const scaledH = h * scale;
+    const scale = BBOX_SCALE_FACTOR;
     const scaled = {
-      x1: centerX - scaledW / 2,
-      y1: centerY - scaledH / 2,
-      x2: centerX + scaledW / 2,
-      y2: centerY + scaledH / 2,
+      x1: cx - (w * scale) / 2,
+      y1: cy - (h * scale) / 2,
+      x2: cx + (w * scale) / 2,
+      y2: cy + (h * scale) / 2,
     };
-    // 4) Ajustar a ratio preview vs imagen 640×480
-    const cameraAspect = cameraLayout.width / cameraLayout.height;
-    const imageAspect = imageLayout.width / imageLayout.height; // ≈ 4/3
+    const camAR = cameraLayout.width / cameraLayout.height;
+    const imgAR = imageLayout.width / imageLayout.height;
     let scaleX,
       scaleY,
-      offsetX = 0,
-      offsetY = 0;
-    if (cameraAspect > imageAspect) {
-      // escala por altura
+      offX = 0,
+      offY = 0;
+    if (camAR > imgAR) {
       scaleY = cameraLayout.height / imageLayout.height;
       scaleX = scaleY;
-      offsetX = (cameraLayout.width - imageLayout.width * scaleX) / 2;
+      offX = (cameraLayout.width - imageLayout.width * scaleX) / 2;
     } else {
-      // escala por ancho
       scaleX = cameraLayout.width / imageLayout.width;
       scaleY = scaleX;
-      offsetY = (cameraLayout.height - imageLayout.height * scaleY) / 2;
+      offY = (cameraLayout.height - imageLayout.height * scaleY) / 2;
     }
     return {
-      x1: scaled.x1 * scaleX + offsetX + DEBUG_OFFSET.x,
-      y1: scaled.y1 * scaleY + offsetY + DEBUG_OFFSET.y + 40,
-      x2: scaled.x2 * scaleX + offsetX + DEBUG_OFFSET.x,
-      y2: scaled.y2 * scaleY + offsetY + DEBUG_OFFSET.y + 40,
+      x1: scaled.x1 * scaleX + offX + DEBUG_OFFSET.x,
+      y1: scaled.y1 * scaleY + offY + DEBUG_OFFSET.y + 40,
+      x2: scaled.x2 * scaleX + offX + DEBUG_OFFSET.x,
+      y2: scaled.y2 * scaleY + offY + DEBUG_OFFSET.y + 40,
     };
   };
-  // Renderiza un recuadro para cada detección del array proporcionado
-  const renderBoundingBoxes = (detections) => {
-    return detections.map((det, index) => {
-      const box = convertBoundingBox(det.bounding_box);
-      const width = Math.abs(box.x2 - box.x1);
-      const height = Math.abs(box.y2 - box.y1);
-      const left = Math.min(box.x1, box.x2);
-      const top = Math.min(box.y1, box.y2);
-      return React.createElement(
-        View,
-        {
-          key: index,
-          style: [styles.boundingBox, { left, top, width, height }],
-        },
-        React.createElement(
-          View,
-          { style: styles.labelContainer },
-          React.createElement(
-            Text,
-            { style: styles.labelText },
-            det.type,
-            ": ",
-            det.data
-          )
-        )
+
+  const renderBoundingBoxes = (detections) =>
+    detections.map((det, i) => {
+      const b = convertBoundingBox(det.bounding_box);
+      return (
+        <View
+          key={i}
+          style={[
+            styles.boundingBox,
+            {
+              left: Math.min(b.x1, b.x2),
+              top: Math.min(b.y1, b.y2),
+              width: Math.abs(b.x2 - b.x1),
+              height: Math.abs(b.y2 - b.y1),
+            },
+          ]}
+        >
+          <View style={styles.labelContainer}>
+            <Text style={styles.labelText}>
+              {det.type}: {det.data}
+            </Text>
+          </View>
+        </View>
       );
     });
-  };
-  // Captura el ancho/alto reales del <CameraView> en pantalla
-  const onCameraLayout = (event) => {
-    const { width, height } = event.nativeEvent.layout;
+
+  const onCameraLayout = (e) => {
+    const { width, height } = e.nativeEvent.layout;
     setCameraLayout({ width, height });
   };
-  // === PERMISOS ===
-  if (!permission) {
-    return React.createElement(View, { style: styles.container });
-  }
-  if (!permission.granted) {
-    return React.createElement(
-      View,
-      { style: styles.container },
-      React.createElement(
-        Text,
-        { style: styles.message },
-        "Necesitamos permisos para usar la c\u00E1mara"
-      ),
-      React.createElement(Button, {
-        onPress: requestPermission,
-        title: "Dar permiso",
-      })
+
+  if (!permission) return <View style={styles.container} />;
+  if (!permission.granted)
+    return (
+      <View style={styles.container}>
+        <Text style={styles.message}>
+          Necesitamos permisos para usar la cámara
+        </Text>
+        <TouchableOpacity onPress={requestPermission} style={styles.iconButton}>
+          <Text style={styles.text}>Dar permiso</Text>
+        </TouchableOpacity>
+      </View>
     );
-  }
-  return React.createElement(
-    View,
-    { style: styles.container },
-    React.createElement(
-      CameraView,
-      {
-        ref: cameraRef,
-        facing: facing,
-        style: styles.camera,
-        animateShutter: false,
-        flash: "off",
-        active: true,
-        onLayout: onCameraLayout,
-        onCameraReady: () => setIsCameraReady(true),
-      },
-      React.createElement(
-        View,
-        { style: styles.statusContainer },
-        React.createElement(
-          Text,
-          { style: styles.statusText },
-          !isCameraReady
-            ? "Iniciando cámara..."
-            : liveDetections.length > 0
-            ? `Detectado en vivo: ${[
-                ...new Set(liveDetections.map((d) => d.type)),
-              ].join(", ")}`
-            : "Apunta el código (detección en vivo)"
-        )
-      ),
-      React.createElement(
-        View,
-        { style: styles.overlay },
-        renderBoundingBoxes(liveDetections)
-      ),
-      React.createElement(
-        View,
-        { style: styles.overlay },
-        renderBoundingBoxes(photoDetections)
-      ),
-      React.createElement(
-        View,
-        { style: styles.controls },
-        React.createElement(
-          TouchableOpacity,
-          {
-            onPress: flipCamera,
-            style: styles.button,
-            disabled: !isCameraReady,
-          },
-          React.createElement(Text, { style: styles.text }, "\uD83D\uDD04")
-        ),
-        React.createElement(
-          TouchableOpacity,
-          {
-            onPress: takePhotoAndScan,
-            style: [
-              styles.scanButton,
-              isTakingPhoto && { backgroundColor: "#999" },
-            ],
-            disabled: !isCameraReady || isTakingPhoto,
-          },
-          isTakingPhoto
-            ? React.createElement(ActivityIndicator, { color: "#000" })
-            : React.createElement(
-                Text,
-                { style: styles.scanButtonText },
-                "Tomar Foto"
-              )
-        ),
-        React.createElement(
-          TouchableOpacity,
-          {
-            onPress: () => {
-              setPreciseMode((prev) => !prev);
-              setLiveDetections([]);
-              setPhotoDetections([]);
-            },
-            style: [
-              styles.button,
-              { backgroundColor: preciseMode ? "#00ff00" : "#ffcc00" },
-            ],
-            disabled: !isCameraReady,
-          },
-          React.createElement(
-            Text,
-            { style: styles.text },
-            preciseMode ? "Preciso" : "Expandido"
-          )
-        )
-      )
-    )
+
+  return (
+    <View style={styles.container}>
+      <TouchableWithoutFeedback onPress={handleFocus}>
+        <CameraView
+          ref={cameraRef}
+          facing={facing}
+          enableTorch={torchEnabled}
+          autoFocus={autoFocusPoint !== null}
+          autoFocusPointOfInterest={autoFocusPoint}
+          active
+          style={styles.camera}
+          animateShutter={false}
+          onLayout={onCameraLayout}
+          onCameraReady={() => setIsCameraReady(true)}
+        >
+          <View style={styles.statusContainer}>
+            <Text style={styles.statusText}>
+              {!isCameraReady
+                ? "Iniciando cámara..."
+                : liveDetections.length > 0
+                ? `Detectado en vivo: ${[
+                    ...new Set(liveDetections.map((d) => d.type)),
+                  ].join(", ")}`
+                : "Apunta al código"}
+            </Text>
+          </View>
+
+          <View style={styles.overlay}>
+            {renderBoundingBoxes(liveDetections)}
+          </View>
+          <View style={styles.overlay}>
+            {renderBoundingBoxes(photoDetections)}
+          </View>
+
+          <View style={styles.controls}>
+            {/* Cambiar cámara */}
+            <TouchableOpacity
+              onPress={flipCamera}
+              style={styles.iconButton}
+              disabled={!isCameraReady}
+            >
+              <Ionicons name="camera-reverse-outline" size={30} color="#000" />
+            </TouchableOpacity>
+
+            {/* Shutter */}
+            <TouchableOpacity
+              onPress={takePhotoAndScan}
+              style={[
+                styles.shutterButton,
+                isTakingPhoto && styles.shutterDisabled,
+              ]}
+              disabled={!isCameraReady || isTakingPhoto}
+            >
+              {isTakingPhoto ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <View style={styles.shutterInner} />
+              )}
+            </TouchableOpacity>
+
+            {/* Linterna */}
+            <TouchableOpacity
+              onPress={() => setTorchEnabled((t) => !t)}
+              style={[
+                styles.iconButton,
+                torchEnabled && { backgroundColor: "#ffe500" },
+              ]}
+              disabled={!isCameraReady || facing === "front"}
+            >
+              <Ionicons
+                name={torchEnabled ? "flashlight" : "flashlight-outline"}
+                size={28}
+                color="#000"
+              />
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      </TouchableWithoutFeedback>
+    </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   message: {
@@ -365,6 +323,8 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
   },
+  text: { fontSize: 13, color: "#000", fontWeight: "600" },
+
   camera: { flex: 1 },
   overlay: {
     position: "absolute",
@@ -378,23 +338,20 @@ const styles = StyleSheet.create({
     position: "absolute",
     borderWidth: 2,
     borderColor: "#00ff00",
-    backgroundColor: "rgba(0, 255, 0, 0.1)",
+    backgroundColor: "rgba(0,255,0,0.1)",
     borderRadius: 4,
   },
   labelContainer: {
     position: "absolute",
     top: -24,
     left: 0,
-    backgroundColor: "rgba(0, 255, 0, 0.8)",
+    backgroundColor: "rgba(0,255,0,0.8)",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  labelText: {
-    color: "#000",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
+  labelText: { color: "#000", fontSize: 12, fontWeight: "bold" },
+
   controls: {
     position: "absolute",
     bottom: 40,
@@ -412,49 +369,46 @@ const styles = StyleSheet.create({
     minWidth: 80,
     alignItems: "center",
   },
-  text: {
-    fontSize: 13,
-    color: "#000",
-    fontWeight: "600",
+
+  // Icon buttons (flip, torch)
+  iconButton: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 35,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  liveButton: {
-    backgroundColor: "#44ff44",
-    padding: 12,
+
+  // Shutter button styles
+  shutterButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 4,
+    borderColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  shutterInner: {
+    width: 50,
+    height: 50,
     borderRadius: 25,
-    minWidth: 120,
-    alignItems: "center",
+    backgroundColor: "#fff",
   },
-  liveButtonText: {
-    fontSize: 14,
-    color: "#000",
-    fontWeight: "bold",
+  shutterDisabled: {
+    opacity: 0.6,
   },
-  scanButton: {
-    backgroundColor: "#44aaee",
-    padding: 15,
-    borderRadius: 30,
-    minWidth: 120,
-    alignItems: "center",
-  },
-  scanButtonText: {
-    fontSize: 15,
-    color: "#000",
-    fontWeight: "bold",
-  },
+
   statusContainer: {
     position: "absolute",
-    top: 36,
-    left: 20,
-    right: 20,
+    top: 40,
+    left: 100,
+    right: 100,
     backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 10,
+    padding: 5,
     borderRadius: 8,
     alignItems: "center",
     zIndex: 3,
   },
-  statusText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  statusText: { color: "white", fontSize: 16, fontWeight: "600" },
 });

@@ -1,46 +1,49 @@
+// app/_layout.js
+import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import React from "react";
 import { Platform } from "react-native";
-import { HapticTab } from "../../components/HapticTab";
-import { IconSymbol } from "../../components/ui/IconSymbol";
-import TabBarBackground from "../../components/ui/TabBarBackground";
-import { Colors } from "../../constants/Colors";
 import { useColorScheme } from "../../hooks/useColorScheme";
+
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  return React.createElement(
-    Tabs,
-    {
-      screenOptions: {
-        tabBarActiveTintColor:
-          Colors[
-            colorScheme !== null && colorScheme !== void 0
-              ? colorScheme
-              : "light"
-          ].tint,
+
+  return (
+    <Tabs
+      screenOptions={{
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: "absolute",
-          },
-          default: {},
-        }),
-      },
-    },
-    React.createElement(Tabs.Screen, {
-      name: "index",
-      options: {
-        title: "Home",
-        tabBarIcon: ({ color }) =>
-          React.createElement(IconSymbol, {
-            size: 28,
-            name: "house.fill",
-            color: color,
-          }),
-      },
-    })
+        // Iconos y etiquetas siempre en negro
+        tabBarActiveTintColor: "#000",
+        tabBarInactiveTintColor: "#000",
+        tabBarLabelStyle: { color: "#000" },
+
+        // Barra más compacta
+        tabBarStyle: {
+          height: 55,
+          paddingTop: 2,
+          paddingBottom: 2,
+          ...Platform.select({ ios: { position: "absolute" }, default: {} }),
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="inventario"
+        options={{
+          title: "Inventario",
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="layers-outline" size={24} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="camera"
+        options={{
+          title: "Cámara",
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="camera-outline" size={24} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
   );
 }
