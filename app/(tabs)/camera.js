@@ -1,64 +1,39 @@
-import {
-  CameraCapturedPicture,
-  CameraType,
-  CameraView,
-  useCameraPermissions,
-} from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImageManipulator from "expo-image-manipulator";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Button,
-  LayoutChangeEvent,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-
-interface BoundingBox {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-interface DetectionResult {
-  data: string;
-  type: string;
-  bounding_box: BoundingBox; // coordenadas relativas a imagen 640×480
-}
-
 export default function CameraScreen() {
   // === ESTADOS Y REFS ===
   const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState<CameraType>("back");
+  const [facing, setFacing] = useState("back");
   // La detección en vivo arranca automáticamente al entrar (true por defecto).
-  const [liveDetections, setLiveDetections] = useState<DetectionResult[]>([]);
-  const [photoDetections, setPhotoDetections] = useState<DetectionResult[]>([]);
+  const [liveDetections, setLiveDetections] = useState([]);
+  const [photoDetections, setPhotoDetections] = useState([]);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
   const [imageLayout, setImageLayout] = useState({ width: 640, height: 480 });
   const [preciseMode, setPreciseMode] = useState(true);
   const [isLiveDetecting, setIsLiveDetecting] = useState(true); // activo de inicio
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
-
-  const cameraRef = useRef<CameraView>(null);
-  const liveIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
+  const cameraRef = useRef(null);
+  const liveIntervalRef = useRef(null);
   const BBOX_SCALE_FACTOR = 1.4;
   const BBOX_PADDING = 10;
   const DEBUG_OFFSET = { x: 0, y: 0 };
-
   // === FUNCIONES DE CONTROL ===
-
   // Voltear cámara y limpiar detecciones
   const flipCamera = () => {
     setFacing((prev) => (prev === "back" ? "front" : "back"));
     setLiveDetections([]);
     setPhotoDetections([]);
   };
-
   // Alternar detección en vivo (opcional: el usuario aún puede pausar)
   const toggleLiveDetecting = () => {
     if (isLiveDetecting) {
@@ -69,21 +44,18 @@ export default function CameraScreen() {
       setLiveDetections([]);
     }
   };
-
   // === DETECCIÓN EN VIVO CON IA ===
-
   // Toma un mini-frame y lo envía a la IA cada segundo
   const processLiveFrame = async () => {
     if (!cameraRef.current || !isCameraReady) return;
     try {
       // 1) Foto ligera sin destello ni sonido
-      const photo: CameraCapturedPicture =
-        await cameraRef.current.takePictureAsync({
-          quality: 0,
-          base64: false,
-          skipProcessing: true,
-          shutterSound: false,
-        });
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0,
+        base64: false,
+        skipProcessing: true,
+        shutterSound: false,
+      });
       // 2) Redimensionar a ancho = 640 px
       const resized = await ImageManipulator.manipulateAsync(
         photo.uri,
@@ -119,7 +91,6 @@ export default function CameraScreen() {
       setLiveDetections([]);
     }
   };
-
   // useEffect para arrancar/detener el bucle de detección en vivo
   useEffect(() => {
     if (isLiveDetecting && isCameraReady) {
@@ -140,9 +111,7 @@ export default function CameraScreen() {
       }
     };
   }, [isLiveDetecting, isCameraReady]);
-
   // === TOMA DE FOTO FINAL CON IA ===
-
   // Toma foto en alta calidad y envía al backend IA
   const takePhotoAndScan = async () => {
     if (!cameraRef.current || !isCameraReady || isTakingPhoto) return;
@@ -150,13 +119,12 @@ export default function CameraScreen() {
     setPhotoDetections([]);
     try {
       // 1) Foto en alta calidad sin destello ni sonido
-      const photo: CameraCapturedPicture =
-        await cameraRef.current.takePictureAsync({
-          quality: 1,
-          base64: false,
-          skipProcessing: false,
-          shutterSound: false,
-        });
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 1,
+        base64: false,
+        skipProcessing: false,
+        shutterSound: false,
+      });
       // 2) Redimensionar a ancho = 640 px
       const resized = await ImageManipulator.manipulateAsync(
         photo.uri,
@@ -194,10 +162,8 @@ export default function CameraScreen() {
       setIsTakingPhoto(false);
     }
   };
-
   // === CONVERTIR COORDENADAS 640×480 → PREVIEW EN PANTALLA ===
-
-  const convertBoundingBox = (bbox: BoundingBox) => {
+  const convertBoundingBox = (bbox) => {
     // 1) Padding
     const padded = {
       x1: bbox.x1 - BBOX_PADDING,
@@ -223,8 +189,8 @@ export default function CameraScreen() {
     // 4) Ajustar a ratio preview vs imagen 640×480
     const cameraAspect = cameraLayout.width / cameraLayout.height;
     const imageAspect = imageLayout.width / imageLayout.height; // ≈ 4/3
-    let scaleX: number,
-      scaleY: number,
+    let scaleX,
+      scaleY,
       offsetX = 0,
       offsetY = 0;
     if (cameraAspect > imageAspect) {
@@ -245,140 +211,152 @@ export default function CameraScreen() {
       y2: scaled.y2 * scaleY + offsetY + DEBUG_OFFSET.y + 40,
     };
   };
-
   // Renderiza un recuadro para cada detección del array proporcionado
-  const renderBoundingBoxes = (detections: DetectionResult[]) => {
+  const renderBoundingBoxes = (detections) => {
     return detections.map((det, index) => {
       const box = convertBoundingBox(det.bounding_box);
       const width = Math.abs(box.x2 - box.x1);
       const height = Math.abs(box.y2 - box.y1);
       const left = Math.min(box.x1, box.x2);
       const top = Math.min(box.y1, box.y2);
-
-      return (
-        <View
-          key={index}
-          style={[styles.boundingBox, { left, top, width, height }]}
-        >
-          <View style={styles.labelContainer}>
-            <Text style={styles.labelText}>
-              {det.type}: {det.data}
-            </Text>
-          </View>
-        </View>
+      return React.createElement(
+        View,
+        {
+          key: index,
+          style: [styles.boundingBox, { left, top, width, height }],
+        },
+        React.createElement(
+          View,
+          { style: styles.labelContainer },
+          React.createElement(
+            Text,
+            { style: styles.labelText },
+            det.type,
+            ": ",
+            det.data
+          )
+        )
       );
     });
   };
-
   // Captura el ancho/alto reales del <CameraView> en pantalla
-  const onCameraLayout = (event: LayoutChangeEvent) => {
+  const onCameraLayout = (event) => {
     const { width, height } = event.nativeEvent.layout;
     setCameraLayout({ width, height });
   };
-
   // === PERMISOS ===
-
   if (!permission) {
-    return <View style={styles.container} />;
+    return React.createElement(View, { style: styles.container });
   }
   if (!permission.granted) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.message}>
-          Necesitamos permisos para usar la cámara
-        </Text>
-        <Button onPress={requestPermission} title="Dar permiso" />
-      </View>
+    return React.createElement(
+      View,
+      { style: styles.container },
+      React.createElement(
+        Text,
+        { style: styles.message },
+        "Necesitamos permisos para usar la c\u00E1mara"
+      ),
+      React.createElement(Button, {
+        onPress: requestPermission,
+        title: "Dar permiso",
+      })
     );
   }
-
-  return (
-    <View style={styles.container}>
-      <CameraView
-        ref={cameraRef}
-        facing={facing}
-        style={styles.camera}
-        animateShutter={false} // SIN animación de obturador (sin destello)
-        flash="off"
-        active
-        onLayout={onCameraLayout}
-        onCameraReady={() => setIsCameraReady(true)}
-      >
-        {/* ===== Mensaje Superior ===== */}
-        <View style={styles.statusContainer}>
-          <Text style={styles.statusText}>
-            {!isCameraReady
-              ? "Iniciando cámara..."
-              : liveDetections.length > 0
-              ? `Detectado en vivo: ${[
-                  ...new Set(liveDetections.map((d) => d.type)),
-                ].join(", ")}`
-              : "Apunta el código (detección en vivo)"}
-          </Text>
-        </View>
-
-        {/* ===== Overlay: recuadros en vivo ===== */}
-        <View style={styles.overlay}>
-          {renderBoundingBoxes(liveDetections)}
-        </View>
-
-        {/* ===== Overlay: recuadros foto final ===== */}
-        <View style={styles.overlay}>
-          {renderBoundingBoxes(photoDetections)}
-        </View>
-
-        {/* ===== Controles Inferiores ===== */}
-        <View style={styles.controls}>
-          {/* Voltear Cámara */}
-          <TouchableOpacity
-            onPress={flipCamera}
-            style={styles.button}
-            disabled={!isCameraReady}
-          >
-            <Text style={styles.text}>🔄</Text>
-          </TouchableOpacity>
-
-          {/* Opcional: Pause/Resume detección en vivo */}
-
-          {/* Tomar Foto y Enviar a IA */}
-          <TouchableOpacity
-            onPress={takePhotoAndScan}
-            style={[
+  return React.createElement(
+    View,
+    { style: styles.container },
+    React.createElement(
+      CameraView,
+      {
+        ref: cameraRef,
+        facing: facing,
+        style: styles.camera,
+        animateShutter: false,
+        flash: "off",
+        active: true,
+        onLayout: onCameraLayout,
+        onCameraReady: () => setIsCameraReady(true),
+      },
+      React.createElement(
+        View,
+        { style: styles.statusContainer },
+        React.createElement(
+          Text,
+          { style: styles.statusText },
+          !isCameraReady
+            ? "Iniciando cámara..."
+            : liveDetections.length > 0
+            ? `Detectado en vivo: ${[
+                ...new Set(liveDetections.map((d) => d.type)),
+              ].join(", ")}`
+            : "Apunta el código (detección en vivo)"
+        )
+      ),
+      React.createElement(
+        View,
+        { style: styles.overlay },
+        renderBoundingBoxes(liveDetections)
+      ),
+      React.createElement(
+        View,
+        { style: styles.overlay },
+        renderBoundingBoxes(photoDetections)
+      ),
+      React.createElement(
+        View,
+        { style: styles.controls },
+        React.createElement(
+          TouchableOpacity,
+          {
+            onPress: flipCamera,
+            style: styles.button,
+            disabled: !isCameraReady,
+          },
+          React.createElement(Text, { style: styles.text }, "\uD83D\uDD04")
+        ),
+        React.createElement(
+          TouchableOpacity,
+          {
+            onPress: takePhotoAndScan,
+            style: [
               styles.scanButton,
               isTakingPhoto && { backgroundColor: "#999" },
-            ]}
-            disabled={!isCameraReady || isTakingPhoto}
-          >
-            {isTakingPhoto ? (
-              <ActivityIndicator color="#000" />
-            ) : (
-              <Text style={styles.scanButtonText}>Tomar Foto</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Modo Preciso / Expandido */}
-          <TouchableOpacity
-            onPress={() => {
+            ],
+            disabled: !isCameraReady || isTakingPhoto,
+          },
+          isTakingPhoto
+            ? React.createElement(ActivityIndicator, { color: "#000" })
+            : React.createElement(
+                Text,
+                { style: styles.scanButtonText },
+                "Tomar Foto"
+              )
+        ),
+        React.createElement(
+          TouchableOpacity,
+          {
+            onPress: () => {
               setPreciseMode((prev) => !prev);
               setLiveDetections([]);
               setPhotoDetections([]);
-            }}
-            style={[
+            },
+            style: [
               styles.button,
               { backgroundColor: preciseMode ? "#00ff00" : "#ffcc00" },
-            ]}
-            disabled={!isCameraReady}
-          >
-            <Text style={styles.text}>
-              {preciseMode ? "Preciso" : "Expandido"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
-    </View>
+            ],
+            disabled: !isCameraReady,
+          },
+          React.createElement(
+            Text,
+            { style: styles.text },
+            preciseMode ? "Preciso" : "Expandido"
+          )
+        )
+      )
+    )
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   message: {
