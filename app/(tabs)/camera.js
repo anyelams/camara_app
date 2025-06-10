@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import Constants from "expo-constants";
 import * as ImageManipulator from "expo-image-manipulator";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -11,8 +12,9 @@ import {
   View,
 } from "react-native";
 
+const { API_CAMARA_URL } = Constants.expoConfig.extra;
+
 export default function CameraScreen() {
-  // === ESTADOS Y REFS ===
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState("back");
   const [torchEnabled, setTorchEnabled] = useState(false);
@@ -31,7 +33,6 @@ export default function CameraScreen() {
   const BBOX_PADDING = 10;
   const DEBUG_OFFSET = { x: 0, y: 0 };
 
-  // Cambia cámara y reinicia
   const flipCamera = () => {
     setFacing((prev) => (prev === "back" ? "front" : "back"));
     setTorchEnabled(false);
@@ -40,7 +41,6 @@ export default function CameraScreen() {
     setPhotoDetections([]);
   };
 
-  // Toca para enfocar y limpia foto previa
   const handleFocus = (e) => {
     const { locationX, locationY } = e.nativeEvent;
     if (cameraLayout.width && cameraLayout.height) {
@@ -48,14 +48,13 @@ export default function CameraScreen() {
         x: locationX / cameraLayout.width,
         y: locationY / cameraLayout.height,
       });
-      setPhotoDetections([]); // limpio el recuadro de la última foto
+      setPhotoDetections([]);
     }
   };
 
-  // === DETECCIÓN EN VIVO CON IA ===
   const processLiveFrame = async () => {
     if (!cameraRef.current || !isCameraReady) return;
-    setPhotoDetections([]); // limpio recuadros de foto anterior
+    setPhotoDetections([]);
     try {
       const snap = await cameraRef.current.takePictureAsync({
         quality: 0,
@@ -74,7 +73,7 @@ export default function CameraScreen() {
       );
       setImageLayout({ width: resized.width, height: resized.height });
       if (resized.base64) {
-        const res = await fetch("http://3.145.153.44/api/detect-code-boxes/", {
+        const res = await fetch(`${API_CAMARA_URL}/api/detect-code-boxes/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image_base64: resized.base64 }),
@@ -105,11 +104,10 @@ export default function CameraScreen() {
     };
   }, [isCameraReady]);
 
-  // === TOMA DE FOTO FINAL CON IA ===
   const takePhotoAndScan = async () => {
     if (!cameraRef.current || !isCameraReady || isTakingPhoto) return;
     setIsTakingPhoto(true);
-    setPhotoDetections([]); // limpio antes de procesar
+    setPhotoDetections([]);
     try {
       const snap = await cameraRef.current.takePictureAsync({
         quality: 1,
@@ -128,7 +126,7 @@ export default function CameraScreen() {
       );
       setImageLayout({ width: resized.width, height: resized.height });
       if (resized.base64) {
-        const res = await fetch("http://3.145.153.44/api/read-code-base64/", {
+        const res = await fetch(`${API_CAMARA_URL}/api/read-code-base64/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image_base64: resized.base64 }),
@@ -148,7 +146,6 @@ export default function CameraScreen() {
     }
   };
 
-  // === CONVERTIR Y RENDERIZAR BOUNDING BOXES ===
   const convertBoundingBox = (bbox) => {
     const padded = {
       x1: bbox.x1 - BBOX_PADDING,
@@ -169,10 +166,7 @@ export default function CameraScreen() {
     };
     const camAR = cameraLayout.width / cameraLayout.height;
     const imgAR = imageLayout.width / imageLayout.height;
-    let scaleX,
-      scaleY,
-      offX = 0,
-      offY = 0;
+    let scaleX, scaleY, offX = 0, offY = 0;
     if (camAR > imgAR) {
       scaleY = cameraLayout.height / imageLayout.height;
       scaleX = scaleY;
@@ -260,30 +254,17 @@ export default function CameraScreen() {
             </Text>
           </View>
 
-          <View style={styles.overlay}>
-            {renderBoundingBoxes(liveDetections)}
-          </View>
-          <View style={styles.overlay}>
-            {renderBoundingBoxes(photoDetections)}
-          </View>
+          <View style={styles.overlay}>{renderBoundingBoxes(liveDetections)}</View>
+          <View style={styles.overlay}>{renderBoundingBoxes(photoDetections)}</View>
 
           <View style={styles.controls}>
-            {/* Cambiar cámara */}
-            <TouchableOpacity
-              onPress={flipCamera}
-              style={styles.iconButton}
-              disabled={!isCameraReady}
-            >
+            <TouchableOpacity onPress={flipCamera} style={styles.iconButton} disabled={!isCameraReady}>
               <Ionicons name="camera-reverse-outline" size={30} color="#000" />
             </TouchableOpacity>
 
-            {/* Shutter */}
             <TouchableOpacity
               onPress={takePhotoAndScan}
-              style={[
-                styles.shutterButton,
-                isTakingPhoto && styles.shutterDisabled,
-              ]}
+              style={[styles.shutterButton, isTakingPhoto && styles.shutterDisabled]}
               disabled={!isCameraReady || isTakingPhoto}
             >
               {isTakingPhoto ? (
@@ -293,13 +274,9 @@ export default function CameraScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Linterna */}
             <TouchableOpacity
               onPress={() => setTorchEnabled((t) => !t)}
-              style={[
-                styles.iconButton,
-                torchEnabled && { backgroundColor: "#ffe500" },
-              ]}
+              style={[styles.iconButton, torchEnabled && { backgroundColor: "#ffe500" }]}
               disabled={!isCameraReady || facing === "front"}
             >
               <Ionicons
@@ -317,21 +294,12 @@ export default function CameraScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  message: {
-    textAlign: "center",
-    paddingBottom: 10,
-    color: "white",
-    fontSize: 16,
-  },
+  message: { textAlign: "center", paddingBottom: 10, color: "white", fontSize: 16 },
   text: { fontSize: 13, color: "#000", fontWeight: "600" },
-
   camera: { flex: 1 },
   overlay: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     zIndex: 1,
   },
   boundingBox: {
@@ -351,7 +319,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   labelText: { color: "#000", fontSize: 12, fontWeight: "bold" },
-
   controls: {
     position: "absolute",
     bottom: 40,
@@ -362,15 +329,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     zIndex: 2,
   },
-  button: {
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 25,
-    minWidth: 80,
-    alignItems: "center",
-  },
-
-  // Icon buttons (flip, torch)
   iconButton: {
     backgroundColor: "#fff",
     padding: 20,
@@ -378,8 +336,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // Shutter button styles
   shutterButton: {
     width: 70,
     height: 70,
@@ -398,7 +354,6 @@ const styles = StyleSheet.create({
   shutterDisabled: {
     opacity: 0.6,
   },
-
   statusContainer: {
     position: "absolute",
     top: 40,
