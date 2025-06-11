@@ -4,8 +4,8 @@ import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import BotonSubmit from "../components/BotonSubmit";
-import Input from "../components/Input";
+import BotonSubmit from "../../components/BotonSubmit";
+import Input from "../../components/Input";
 
 const { API_URL, API_URL_LOGIN } = Constants.expoConfig.extra;
 

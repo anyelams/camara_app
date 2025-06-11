@@ -26,16 +26,6 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="inventario"
-        options={{
-          title: "Inventario",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="layers-outline" size={24} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
         name="camera"
         options={{
           title: "Cámara",

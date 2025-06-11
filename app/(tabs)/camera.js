@@ -73,7 +73,7 @@ export default function CameraScreen() {
       );
       setImageLayout({ width: resized.width, height: resized.height });
       if (resized.base64) {
-        const res = await fetch(`${API_CAMARA_URL}/api/detect-code-boxes/`, {
+        const res = await fetch(`${API_CAMARA_URL}/api/read-code-base64/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image_base64: resized.base64 }),
@@ -166,7 +166,10 @@ export default function CameraScreen() {
     };
     const camAR = cameraLayout.width / cameraLayout.height;
     const imgAR = imageLayout.width / imageLayout.height;
-    let scaleX, scaleY, offX = 0, offY = 0;
+    let scaleX,
+      scaleY,
+      offX = 0,
+      offY = 0;
     if (camAR > imgAR) {
       scaleY = cameraLayout.height / imageLayout.height;
       scaleX = scaleY;
@@ -254,17 +257,28 @@ export default function CameraScreen() {
             </Text>
           </View>
 
-          <View style={styles.overlay}>{renderBoundingBoxes(liveDetections)}</View>
-          <View style={styles.overlay}>{renderBoundingBoxes(photoDetections)}</View>
+          <View style={styles.overlay}>
+            {renderBoundingBoxes(liveDetections)}
+          </View>
+          <View style={styles.overlay}>
+            {renderBoundingBoxes(photoDetections)}
+          </View>
 
           <View style={styles.controls}>
-            <TouchableOpacity onPress={flipCamera} style={styles.iconButton} disabled={!isCameraReady}>
+            <TouchableOpacity
+              onPress={flipCamera}
+              style={styles.iconButton}
+              disabled={!isCameraReady}
+            >
               <Ionicons name="camera-reverse-outline" size={30} color="#000" />
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={takePhotoAndScan}
-              style={[styles.shutterButton, isTakingPhoto && styles.shutterDisabled]}
+              style={[
+                styles.shutterButton,
+                isTakingPhoto && styles.shutterDisabled,
+              ]}
               disabled={!isCameraReady || isTakingPhoto}
             >
               {isTakingPhoto ? (
@@ -276,7 +290,10 @@ export default function CameraScreen() {
 
             <TouchableOpacity
               onPress={() => setTorchEnabled((t) => !t)}
-              style={[styles.iconButton, torchEnabled && { backgroundColor: "#ffe500" }]}
+              style={[
+                styles.iconButton,
+                torchEnabled && { backgroundColor: "#ffe500" },
+              ]}
               disabled={!isCameraReady || facing === "front"}
             >
               <Ionicons
@@ -294,12 +311,20 @@ export default function CameraScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  message: { textAlign: "center", paddingBottom: 10, color: "white", fontSize: 16 },
+  message: {
+    textAlign: "center",
+    paddingBottom: 10,
+    color: "white",
+    fontSize: 16,
+  },
   text: { fontSize: 13, color: "#000", fontWeight: "600" },
   camera: { flex: 1 },
   overlay: {
     position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     zIndex: 1,
   },
   boundingBox: {

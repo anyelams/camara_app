@@ -1,69 +1,91 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-/**
- * CompanyCard
- *
- * Props:
- * - item: { id: string, name: string, contactLabel: string, contactValue: string }
- * - onPress: (item) => void
- */
-export default function CompanyCard({ item, onPress }) {
+export default function AccentCard({ name, id, contactInfo, onPress }) {
+  const Container = onPress ? TouchableOpacity : View;
+
   return (
-    <TouchableOpacity style={styles.card} onPress={() => onPress(item)}>
-      <View style={styles.cardLeft}>
-        <Text style={styles.companyName}>{item.name}</Text>
-        <Text style={styles.companyId}>#{item.id}</Text>
-        <View style={styles.contactRow}>
-          <Text style={styles.contactLabel}>{item.contactLabel}</Text>
-          <Text style={styles.contactValue}>{item.contactValue}</Text>
+    <Container style={styles.card} {...(onPress && { onPress })}>
+      {/* Acento lateral */}
+      <View style={styles.accent} />
+
+      {/* Contenido */}
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.name}>{name}</Text>
+          {onPress && (
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color="#999"
+              style={{ marginLeft: 8 }}
+            />
+          )}
+        </View>
+        <Text style={styles.idText}>#{id}</Text>
+
+        <View style={styles.infoRow}>
+          <Ionicons
+            name="call-outline"
+            size={16}
+            color="#666"
+            style={styles.icon}
+          />
+          <Text style={styles.value}>{contactInfo}</Text>
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={24} color="#CCC" />
-    </TouchableOpacity>
+    </Container>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
-    backgroundColor: "#FFF",
+    backgroundColor: "#fff",
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    alignItems: "center",
-    justifyContent: "space-between",
+    marginHorizontal: 16,
+    marginVertical: 6,
+    // sombra ligera
     shadowColor: "#000",
-    shadowOpacity: 0.1,
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
   },
-  cardLeft: {
+  accent: {
+    width: 6,
+    backgroundColor: "#2196F3",
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
+  },
+  content: {
     flex: 1,
-    marginRight: 8,
+    padding: 16,
   },
-  companyName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#222",
-  },
-  companyId: {
-    marginTop: 4,
-    fontSize: 14,
-    color: "#999",
-  },
-  contactRow: {
+  header: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 4,
+    alignItems: "center",
+    marginBottom: 4,
   },
-  contactLabel: {
-    fontSize: 14,
-    color: "#444",
+  name: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
   },
-  contactValue: {
-    fontSize: 14,
+  idText: {
+    fontSize: 12,
     color: "#999",
+    marginBottom: 8,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  icon: {
+    marginRight: 6,
+  },
+  value: {
+    fontSize: 14,
+    color: "#333",
   },
 });
